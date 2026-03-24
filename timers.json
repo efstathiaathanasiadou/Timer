@@ -1,0 +1,92 @@
+{
+  "1483504689080176793": {
+    "name": "Bowhed",
+    "end_time": 1773837507.947119,
+    "role_id": 1480187626706178282,
+    "pinged": false,
+    "channel_id": 1480187628371575054,
+    "duration": 72000.0,
+    "reminder_msg_id": null,
+    "reminder_duration": 28800.0,
+    "last_reset_msg_id": 1483504805514186852,
+    "message_ids": [
+      1483504689080176793
+    ]
+  },
+  "1483507726465368094": {
+    "name": "bowhead",
+    "end_time": 1773838307.434331,
+    "role_id": 1480187626706178282,
+    "pinged": false,
+    "channel_id": 1480187628371575054,
+    "duration": 72000.0,
+    "reminder_msg_id": null,
+    "reminder_duration": 28800.0,
+    "last_reset_msg_id": 1483508159099441273,
+    "message_ids": [
+      1483507726465368094
+    ]
+  },
+  "1485695710501404772": {
+    "name": "DD",
+    "end_time": 1774460681.429059,
+    "role_id": 1480187626706178282,
+    "pinged": false,
+    "channel_id": 1483508409285214229,
+    "duration": 172800.0,
+    "reminder_msg_id": null,
+    "reminder_duration": 28800.0,
+    "last_reset_msg_id": 1485695794295210175,
+    "message_ids": [
+      1485695710501404772,
+      1485695794295210175
+    ]
+  },
+  "1485696667515617311": {
+    "name": "stock",
+    "end_time": 1774460905.767479,
+    "role_id": 1480187626706178282,
+    "pinged": false,
+    "channel_id": 1480212705800622090,
+    "duration": 172800.0,
+    "reminder_msg_id": null,
+    "reminder_duration": 28800.0,
+    "last_reset_msg_id": 1485696735333322752,
+    "message_ids": [
+      1485696667515617311,
+      1485696698176245881,
+      1485696735333322752
+    ]
+  },
+  "1485696922567180428": {
+    "name": "stock",
+    "end_time": 1774461048.712478,
+    "role_id": 1153616273306034217,
+    "pinged": false,
+    "channel_id": 1430288294796857409,
+    "duration": 172800.0,
+    "reminder_msg_id": null,
+    "reminder_duration": 28800.0,
+    "last_reset_msg_id": 1485697334720331848,
+    "message_ids": [
+      1485696922567180428,
+      1485696951113613342,
+      1485697132429054043,
+      1485697334720331848
+    ]
+  },
+  "1485697692276359218": {
+    "name": "all",
+    "end_time": 1774461133.952204,
+    "role_id": 1153616273306034217,
+    "pinged": false,
+    "channel_id": 1430288294796857409,
+    "duration": 172800.0,
+    "reminder_msg_id": null,
+    "reminder_duration": 28800.0,
+    "last_reset_msg_id": null,
+    "message_ids": [
+      1485697692276359218
+    ]
+  }
+}
