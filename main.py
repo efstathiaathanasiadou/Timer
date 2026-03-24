@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 from dotenv import load_dotenv
+import webserver
+
 
 # -------------------------
 # Load token
@@ -772,5 +774,5 @@ async def update_admin_list():
 # -------------------------
 if not TOKEN:
     raise ValueError("DISCORD_TOKEN not found in .env file")
-
+webserver.keep_alive()
 bot.run(TOKEN)
