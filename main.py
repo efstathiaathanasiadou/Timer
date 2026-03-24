@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 # -------------------------
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
-DISCORD_TOKEN = os.environ['discordkey']
+
 # -------------------------
 # Intents / Bot
 # -------------------------
@@ -774,4 +774,3 @@ if not TOKEN:
     raise ValueError("DISCORD_TOKEN not found in .env file")
 
 bot.run(TOKEN)
-bot.run(DISCORD-TOKEN)
