@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import json
 import os
+import traceback
 from dotenv import load_dotenv
 
 
@@ -207,9 +208,7 @@ def make_timer_embed(channel: discord.TextChannel):
             value=(
                 f"**Time Left:** {format_time(timer['remaining'])}\n"
                 f"**Role:** {timer['role_text']}\n"
-                f"**Reminder:** {timer['reminder_hours']:.2f}h\n"
-                f"**Delete:** `!delete_timer \"{timer['name']}\"`\n"
-                f"**Rename:** `!rename_timer \"{timer['name']}\" \"New Name\"`"
+                f"**Reminder:** {timer['reminder_hours']:.2f}h before end"
             ),
             inline=False
         )
@@ -233,6 +232,9 @@ async def delete_timer_messages(channel, info, original_message_id=None):
             await msg.delete()
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
+        except Exception as e:
+            print(f"[delete_timer_messages] Unexpected error deleting message {msg_id}: {e}")
+            traceback.print_exc()
 
 
 async def cleanup_command(ctx, bot_msg=None, delay=5):
@@ -254,12 +256,26 @@ def schedule_cleanup(ctx, bot_msg=None, delay=5):
     bot.loop.create_task(cleanup_command(ctx, bot_msg, delay))
 
 
+def _timer_task_done(task, message_id):
+    try:
+        exc = task.exception()
+        if exc:
+            print(f"[timer_task_done] Timer task {message_id} crashed: {exc}")
+            traceback.print_exception(type(exc), exc, exc.__traceback__)
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        print(f"[timer_task_done] Failed checking task exception for {message_id}: {e}")
+        traceback.print_exc()
+
+
 def start_timer_task(message_id, channel):
     existing_task = active_timer_tasks.get(message_id)
     if existing_task and not existing_task.done():
         return
 
     task = bot.loop.create_task(timer_task(message_id, channel))
+    task.add_done_callback(lambda t, mid=message_id: _timer_task_done(t, mid))
     active_timer_tasks[message_id] = task
 
 
@@ -267,8 +283,12 @@ async def ensure_master_message(channel):
     if channel.id in channel_master_message:
         return
 
-    msg = await channel.send(embed=make_timer_embed(channel))
-    channel_master_message[channel.id] = msg.id
+    try:
+        msg = await channel.send(embed=make_timer_embed(channel))
+        channel_master_message[channel.id] = msg.id
+    except Exception as e:
+        print(f"[ensure_master_message] Failed in channel {channel.id}: {e}")
+        traceback.print_exc()
 
 
 # -------------------------
@@ -289,7 +309,6 @@ async def on_ready():
     load_timers()
     print(f"Loaded {len(timers)} timer(s) from disk")
 
-    # Recreate per-channel timer boards and restart timer tasks
     active_timer_tasks.clear()
     channels_with_timers = set()
 
@@ -332,6 +351,7 @@ async def on_reaction_add(reaction, user):
             await old_msg.delete()
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
+
         timer_info["reminder_msg_id"] = None
 
     if timer_info.get("last_reset_msg_id"):
@@ -340,6 +360,7 @@ async def on_reaction_add(reaction, user):
             await last_reset_msg.delete()
         except (discord.NotFound, discord.Forbidden, discord.HTTPException):
             pass
+
         timer_info["last_reset_msg_id"] = None
 
     timer_info["end_time"] = datetime.now(timezone.utc) + timer_info["duration"]
@@ -376,7 +397,51 @@ async def set_timer(ctx, name: str, hours: float, role: discord.Role, reminder_h
 
     message = await ctx.send(
         f"⏳ Timer **{name}** for {role.mention} started for {hours:g} hour(s). "
-        f"Reminder set for {reminder_hours:g} hour(s). React 🔄 to reset."
+        f"Reminder set for {reminder_hours:g} hour(s) before end. React 🔄 to reset."
+    )
+
+    timers[message.id] = {
+        "name": name,
+        "end_time": end_time,
+        "role_id": role.id,
+        "pinged": False,
+        "channel_id": ctx.channel.id,
+        "duration": duration,
+        "reminder_msg_id": None,
+        "reminder_duration": reminder_duration,
+        "last_reset_msg_id": None,
+        "message_ids": [message.id],
+    }
+
+    save_timers()
+
+    await message.add_reaction("🔄")
+    await ensure_master_message(ctx.channel)
+    start_timer_task(message.id, ctx.channel)
+    await update_master_message(ctx.channel)
+
+
+@bot.command()
+async def set_timer_minutes(ctx, name: str, minutes: float, role: discord.Role, reminder_hours: float = 8):
+    if not can_use_timer(ctx.author):
+        await ctx.send(f"{ctx.author.mention} ❌ You cannot set timers!")
+        return
+
+    if minutes <= 0:
+        await ctx.send("❌ Timer duration must be greater than 0.")
+        return
+
+    if reminder_hours < 0:
+        await ctx.send("❌ Reminder time cannot be negative.")
+        return
+
+    duration = timedelta(minutes=minutes)
+    reminder_duration = timedelta(hours=reminder_hours)
+    end_time = datetime.now(timezone.utc) + duration
+
+    message = await ctx.send(
+        f"⏳ Timer **{name}** for {role.mention} started for {minutes:g} minute(s). "
+        f"Reminder set for {reminder_hours:g} hour(s) before end. React 🔄 to reset."
     )
 
     timers[message.id] = {
@@ -483,7 +548,7 @@ async def rename_timer(ctx, old_name: str, *, new_name: str):
         await original_msg.edit(
             content=(
                 f"⏳ Timer **{new_name}** for {role_text} started for {hours_total:g} hour(s). "
-                f"Reminder set for {reminder_hours:g} hour(s). React 🔄 to reset."
+                f"Reminder set for {reminder_hours:g} hour(s) before end. React 🔄 to reset."
             )
         )
     except (discord.NotFound, discord.Forbidden, discord.HTTPException):
@@ -610,6 +675,7 @@ async def help_timer(ctx):
         name="Timer Commands",
         value=(
             "`!set_timer \"name\" <hours> @role [reminder_hours]`\n"
+            "`!set_timer_minutes \"name\" <minutes> @role [reminder_hours]`\n"
             "`!time_left`\n"
             "`!delete_timer \"name\"`\n"
             "`!rename_timer \"old name\" \"new name\"`\n"
@@ -666,43 +732,74 @@ async def timer_task(message_id, channel):
             info = timers[message_id]
             remaining = (info["end_time"] - datetime.now(timezone.utc)).total_seconds()
 
-            if not info["pinged"] and info["duration"].total_seconds() >= info["reminder_duration"].total_seconds():
-                elapsed = info["duration"].total_seconds() - remaining
-                if elapsed >= info["reminder_duration"].total_seconds():
+            try:
+                if (
+                    not info["pinged"]
+                    and info["duration"].total_seconds() > info["reminder_duration"].total_seconds()
+                    and remaining <= info["reminder_duration"].total_seconds()
+                ):
                     role = channel.guild.get_role(info["role_id"])
                     if role:
                         reminder_msg = await channel.send(
-                            f"{role.mention} ⏰ Timer **{info['name']}** has reached "
-                            f"{info['reminder_duration'].total_seconds() / 3600:.2f} hour(s)!"
+                            f"{role.mention} ⏰ Timer **{info['name']}** has "
+                            f"{info['reminder_duration'].total_seconds() / 3600:.2f} hour(s) left!"
                         )
                         info["reminder_msg_id"] = reminder_msg.id
                         info.setdefault("message_ids", []).append(reminder_msg.id)
                         info["pinged"] = True
                         save_timers()
+            except Exception as e:
+                print(f"[timer_task] Reminder section failed for timer {message_id}: {e}")
+                traceback.print_exc()
 
             if remaining <= 0:
-                role = channel.guild.get_role(info["role_id"])
-                if role:
-                    ended_msg = await channel.send(f"{role.mention} ✅ Timer **{info['name']}** has ended!")
-                    info.setdefault("message_ids", []).append(ended_msg.id)
-                    save_timers()
+                try:
+                    role = channel.guild.get_role(info["role_id"])
+                    if role:
+                        ended_msg = await channel.send(f"{role.mention} ✅ Timer **{info['name']}** has ended!")
+                        info.setdefault("message_ids", []).append(ended_msg.id)
+                        save_timers()
+                except Exception as e:
+                    print(f"[timer_task] Failed sending ended message for timer {message_id}: {e}")
+                    traceback.print_exc()
 
                 await asyncio.sleep(2)
-                await delete_timer_messages(channel, info, original_message_id=message_id)
+
+                try:
+                    await delete_timer_messages(channel, info, original_message_id=message_id)
+                except Exception as e:
+                    print(f"[timer_task] Failed deleting timer messages for timer {message_id}: {e}")
+                    traceback.print_exc()
 
                 if message_id in timers:
                     del timers[message_id]
                     save_timers()
 
                 active_timer_tasks.pop(message_id, None)
-                await update_master_message(channel)
+
+                try:
+                    await update_master_message(channel)
+                except Exception as e:
+                    print(f"[timer_task] Failed updating master message after end for timer {message_id}: {e}")
+                    traceback.print_exc()
+
                 return
 
-            await update_master_message(channel)
+            try:
+                await update_master_message(channel)
+            except Exception as e:
+                print(f"[timer_task] Failed updating master message for timer {message_id}: {e}")
+                traceback.print_exc()
+
             await asyncio.sleep(5)
+
     except asyncio.CancelledError:
         active_timer_tasks.pop(message_id, None)
         raise
+    except Exception as e:
+        print(f"[timer_task] CRASHED for timer {message_id}: {e}")
+        traceback.print_exc()
+        active_timer_tasks.pop(message_id, None)
 
 
 # -------------------------
@@ -715,19 +812,34 @@ async def update_master_message(channel):
         else:
             return
 
+    if channel.id not in channel_master_message:
+        return
+
     master_id = channel_master_message[channel.id]
 
     try:
         master_msg = await channel.fetch_message(master_id)
     except discord.NotFound:
-        master_msg = await channel.send(embed=make_timer_embed(channel))
-        channel_master_message[channel.id] = master_msg.id
+        try:
+            master_msg = await channel.send(embed=make_timer_embed(channel))
+            channel_master_message[channel.id] = master_msg.id
+            return
+        except Exception as e:
+            print(f"[update_master_message] Failed recreating master message in channel {channel.id}: {e}")
+            traceback.print_exc()
+            return
+    except Exception as e:
+        print(f"[update_master_message] Failed fetching master message in channel {channel.id}: {e}")
+        traceback.print_exc()
         return
 
     try:
         await master_msg.edit(embed=make_timer_embed(channel), content=None)
     except discord.HTTPException:
         pass
+    except Exception as e:
+        print(f"[update_master_message] Failed editing master message in channel {channel.id}: {e}")
+        traceback.print_exc()
 
 
 # -------------------------
